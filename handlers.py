@@ -205,8 +205,13 @@ async def ai_consultant_handler(message: Message, bot: Bot):
     user_query = message.text.strip()
     ai_response = await ask_gemini(user_query)
 
-    await message.answer(
-        ai_response,
-        reply_markup=quick_book_inline,
-        parse_mode="Markdown"
-    )
+    try:
+        await message.answer(
+            ai_response,
+            reply_markup=quick_book_inline
+        )
+    except Exception as e:
+        await message.answer(
+            "Assalomu alaykum! Xizmatlarimiz va qabulga yozilish uchun quyidagi tugmani bosing 👇",
+            reply_markup=quick_book_inline
+        )
