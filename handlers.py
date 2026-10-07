@@ -14,6 +14,7 @@ from config import (
     SERVICES_AND_PRICES
 )
 from keyboards import main_menu, phone_keyboard, cancel_keyboard, quick_book_inline
+from ai_assistant import ask_gemini
 
 router = Router()
 
@@ -190,3 +191,22 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_
             )
         except Exception as e:
             print(f"[XATO] Admin guruhga xabar yuborishda xatolik: {e}")
+
+
+# 🤖 Foydalanuvchining barcha erkin savollariga Gemini AI orqali aqlli javob qaytarish
+@router.message(F.text)
+async def ai_consultant_handler(message: Message, bot: Bot):
+    # Foydalanuvchiga yozish jarayoni ko'rinishi uchun (typing indicator)
+    try:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    except Exception:
+        pass
+
+    user_query = message.text.strip()
+    ai_response = await ask_gemini(user_query)
+
+    await message.answer(
+        ai_response,
+        reply_markup=quick_book_inline,
+        parse_mode="Markdown"
+    )
