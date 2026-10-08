@@ -1,8 +1,11 @@
+import logging
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+
+logger = logging.getLogger(__name__)
 
 from config import (
     ADMIN_GROUP_ID,
@@ -208,10 +211,13 @@ async def ai_consultant_handler(message: Message, bot: Bot):
     try:
         await message.answer(
             ai_response,
-            reply_markup=quick_book_inline
+            reply_markup=quick_book_inline,
+            parse_mode=None
         )
     except Exception as e:
+        logger.error(f"Xabar yuborishda xatolik: {e}")
         await message.answer(
-            "Assalomu alaykum! Xizmatlarimiz va qabulga yozilish uchun quyidagi tugmani bosing 👇",
-            reply_markup=quick_book_inline
+            ai_response,
+            reply_markup=quick_book_inline,
+            parse_mode=None
         )
