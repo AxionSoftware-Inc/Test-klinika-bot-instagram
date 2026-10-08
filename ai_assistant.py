@@ -22,27 +22,31 @@ if GEMINI_API_KEY:
 services_text = ", ".join([f"{s['name']} ({s['price']})" for s in SERVICES_AND_PRICES])
 
 SYSTEM_INSTRUCTION = f"""
-Siz — {CLINIC_NAME} klinikasining tezkor va xushmuomala AI konsultantisiz.
+Siz — {CLINIC_NAME} klinikasining xushmuomala, aqlli va tezkor AI maslahatchisisiz.
 
-Ma'lumotlar:
-Nomi: {CLINIC_NAME} | Tel: {CLINIC_PHONE} | Manzil: {CLINIC_ADDRESS}
-Ish vaqti: Dush-Shanba 08:30-18:00
-Xizmatlar: {services_text}
+Klinika ma'lumotlari:
+- Nomi: {CLINIC_NAME}
+- Telefon: {CLINIC_PHONE}
+- Manzil: {CLINIC_ADDRESS}
+- Ish vaqti: Dushanba - Shanba, 08:30 dan 18:00 gacha (Yakshanba dam olish kuni)
+- Xizmatlar va narxlar: {services_text}
 
-MUHIM QOIDALAR:
-1. Faqat 1 yoki 2 ta JUDA QISQA, aniq jumla bilan javob bering. Uzun matn yozmang!
-2. Belgilardan (yulduzcha *, pastki chiziq _ kabi formatlardan) foydalanmang, faqat oddiy toza matn yozing.
-3. Mijoz salom bersa, qisqa alik olib, nima xizmat kerakligini so'rang.
-4. Javob oxiriga: "Qabulga yozilish uchun pastdagi tugmani bosing 👇" deb qo'shing.
+QOIDALAR:
+1. Mijozning savoliga aniq, tushunarli va do'stona o'zbek tilida javob bering.
+2. Agar mijoz salom bersa, xushmuomala alik olib, qanday yordam bera olishingizni so'rang.
+3. Agar manzil, telefon, narxlar, shifokorlar haqida so'ralsa, yuqoridagi ma'lumotlarga tayanib to'liq javob bering.
+4. Javob juda uzun bo'lmasin (2-4 ta lo'nda jumla), lekin hech qachon chala yoki kesilib qolmasin.
+5. Matnda yulduzcha (*) yoki pastki chiziq (_) kabi maxsus belgilarni ISHLATMANG, faqat toza oddiy matn yozing.
+6. Javob oxiriga: "Qabulga yozilish uchun pastdagi tugmani bosing 👇" deb qo'shing.
 """
 
 async def ask_gemini(user_message: str) -> str:
-    """Foydalanuvchi savoliga Gemini Flash Lite orqali tezkor va qisqa javob"""
+    """Foydalanuvchi savoliga Gemini AI orqali tezkor va aqlli javob qaytarish"""
     if not client:
         return "Assalomu alaykum! Qabulga yozilish yoki ma'lumot olish uchun quyidagi tugmalardan foydalaning 👇"
 
-    # Eng tezkor va yengil modellar ro'yxati
-    models_to_try = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"]
+    # Eng zamonaviy va tezkor modellar ro'yxati
+    models_to_try = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
 
     for model_name in models_to_try:
         try:
@@ -51,8 +55,8 @@ async def ask_gemini(user_message: str) -> str:
                 contents=user_message,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.5,
-                    max_output_tokens=200,
+                    temperature=0.4,
+                    max_output_tokens=600,
                 )
             )
             if response and response.text:
@@ -61,3 +65,4 @@ async def ask_gemini(user_message: str) -> str:
             logger.warning(f"{model_name} xatolik: {e}, keyingi model tekshirilmoqda...")
 
     return "Assalomu alaykum! Sizga qanday yordam bera olamiz? Qabulga yozilish uchun pastdagi tugmani bosing 👇"
+
