@@ -40,25 +40,29 @@ QOIDALAR:
 6. Javob oxiriga: "Qabulga yozilish uchun pastdagi tugmani bosing 👇" deb qo'shing.
 """
 
+import asyncio
+
 async def ask_gemini(user_message: str) -> str:
     """Foydalanuvchi savoliga Gemini AI orqali tezkor va aqlli javob qaytarish"""
     if not client:
         return "Assalomu alaykum! Qabulga yozilish yoki ma'lumot olish uchun quyidagi tugmalardan foydalaning 👇"
 
-    # Eng zamonaviy va tezkor modellar ro'yxati
-    models_to_try = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
     for model_name in models_to_try:
         try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=user_message,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.4,
-                    max_output_tokens=600,
+            def _generate():
+                return client.models.generate_content(
+                    model=model_name,
+                    contents=user_message,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.4,
+                        max_output_tokens=600,
+                    )
                 )
-            )
+
+            response = await asyncio.to_thread(_generate)
             if response and response.text:
                 return response.text.strip()
         except Exception as e:

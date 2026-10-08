@@ -1,8 +1,7 @@
 import logging
 import os
 import httpx
-from fastapi import FastAPI, Request, Response, Query
-from pydantic import BaseModel
+from fastapi import FastAPI, Request, Response, Query, BackgroundTasks
 from typing import Optional
 
 from ai_assistant import ask_gemini
@@ -31,13 +30,13 @@ async def verify_webhook(
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
         logger.info("Meta Webhook muvaffaqiyatli tasdiqlandi!")
         return Response(content=hub_challenge, media_type="text/plain")
-    logger.warning("Meta Webhook tekshiruvi muvaffaqiyatsiz bo'ldi.")
+    logger.warning(f"Meta Webhook tekshiruvi muvaffaqiyatsiz bo'ldi. Token: {hub_verify_token}")
     return Response(content="Verification token mismatch", status_code=403)
 
 
 # 2. Instagram Voqealari (POST) — Kommentlar va Direct
 @app.post("/instagram-webhook")
-async def receive_webhook(request: Request):
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
         data = await request.json()
         logger.info(f"Yangi Instagram Webhook ma'lumoti: {data}")
@@ -45,7 +44,9 @@ async def receive_webhook(request: Request):
         logger.error(f"JSON o'qishda xatolik: {e}")
         return {"status": "bad request"}
 
-    if data.get("object") != "instagram":
+    obj = data.get("object")
+    if obj not in ["instagram", "page"]:
+        logger.info(f"Noma'lum webhook obyekti: {obj}, e'tiborsiz qoldirildi.")
         return {"status": "ignored"}
 
     for entry in data.get("entry", []):
@@ -55,13 +56,13 @@ async def receive_webhook(request: Request):
             field = change.get("field")
             value = change.get("value", {})
             if field == "comments":
-                await handle_instagram_comment(value)
+                background_tasks.add_task(handle_instagram_comment, value)
 
         # B) Direct xabarlar kelganda (messaging)
         messaging_list = entry.get("messaging", [])
         for messaging in messaging_list:
             if "message" in messaging and not messaging.get("message", {}).get("is_echo"):
-                await handle_instagram_direct(messaging)
+                background_tasks.add_task(handle_instagram_direct, messaging)
 
     return {"status": "ok"}
 
@@ -75,19 +76,24 @@ async def handle_instagram_comment(comment_data: dict):
 
     logger.info(f"Yangi komment: @{username}: '{text}' (ID: {comment_id})")
 
-    if not PAGE_ACCESS_TOKEN or not comment_id:
+    token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN", PAGE_ACCESS_TOKEN)
+    if not token or not comment_id:
+        logger.warning("PAGE_ACCESS_TOKEN yoki comment_id mavjud emas!")
         return
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         # 1-qadam: Komment ostiga ommaviy qisqa javob yozish
         public_reply_text = f"Assalomu alaykum @{username}! Directingizga to'liq ma'lumot va qabul linkini yubordik ✅"
         try:
             res_public = await client.post(
                 f"{GRAPH_API_URL}/{comment_id}/replies",
-                params={"access_token": PAGE_ACCESS_TOKEN},
+                params={"access_token": token},
                 json={"message": public_reply_text}
             )
-            logger.info(f"Komment ostiga javob qaytarildi: {res_public.status_code}")
+            if res_public.status_code == 200:
+                logger.info(f"Komment ostiga javob qaytarildi: {res_public.json()}")
+            else:
+                logger.error(f"Komment ostiga javobda xatolik ({res_public.status_code}): {res_public.text}")
         except Exception as e:
             logger.error(f"Komment ostiga javob yozishda xatolik: {e}")
 
@@ -102,13 +108,16 @@ async def handle_instagram_comment(comment_data: dict):
         try:
             res_dm = await client.post(
                 f"{GRAPH_API_URL}/me/messages",
-                params={"access_token": PAGE_ACCESS_TOKEN},
+                params={"access_token": token},
                 json={
                     "recipient": {"comment_id": comment_id},
                     "message": {"text": dm_text}
                 }
             )
-            logger.info(f"Directga avto-xabar yuborildi: {res_dm.status_code}")
+            if res_dm.status_code == 200:
+                logger.info(f"Directga avto-xabar yuborildi: {res_dm.json()}")
+            else:
+                logger.error(f"Directga xabar yuborishda xatolik ({res_dm.status_code}): {res_dm.text}")
         except Exception as e:
             logger.error(f"Directga xabar yuborishda xatolik: {e}")
 
@@ -119,31 +128,44 @@ async def handle_instagram_direct(messaging_data: dict):
     message = messaging_data.get("message", {})
     user_text = message.get("text", "").strip()
 
-    if not sender_id or not user_text or not PAGE_ACCESS_TOKEN:
+    token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN", PAGE_ACCESS_TOKEN)
+    if not sender_id or not token:
+        logger.warning(f"Sender ID ({sender_id}) yoki token yetishmayapti!")
         return
 
     logger.info(f"Directdan xabar keldi (Sender ID: {sender_id}): '{user_text}'")
 
-    # Gemini AI dan aqlli, qisqa javob olish
-    ai_reply = await ask_gemini(user_text)
+    if not user_text:
+        # Matnsiz (stiker, rasm yoki audio) kelganda
+        final_reply = (
+            f"Assalomu alaykum! {CLINIC_NAME} klinikasiga xush kelibsiz.\n\n"
+            f"Iltimos, savolingizni matn ko'rinishida yozib qoldiring yoki barcha ma'lumotlar va qabulga yozilish uchun rasmiy Telegram botimizga kiring:\n"
+            f"👉 {BOT_TELEGRAM_LINK}"
+        )
+    else:
+        # Gemini AI dan aqlli javob olish
+        ai_reply = await ask_gemini(user_text)
 
-    # Javob tagiga Telegram bot linkini qo'shish
-    final_reply = (
-        f"{ai_reply}\n\n"
-        f"📋 To'liq ma'lumot va navbatga yozilish Telegram botimizda:\n"
-        f"👉 {BOT_TELEGRAM_LINK}"
-    )
+        # Javob tagiga Telegram bot linkini qo'shish
+        final_reply = (
+            f"{ai_reply}\n\n"
+            f"📋 To'liq ma'lumot va navbatga yozilish Telegram botimizda:\n"
+            f"👉 {BOT_TELEGRAM_LINK}"
+        )
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             res = await client.post(
                 f"{GRAPH_API_URL}/me/messages",
-                params={"access_token": PAGE_ACCESS_TOKEN},
+                params={"access_token": token},
                 json={
                     "recipient": {"id": sender_id},
                     "message": {"text": final_reply}
                 }
             )
-            logger.info(f"Directga Gemini AI javobi yuborildi: {res.status_code}")
+            if res.status_code == 200:
+                logger.info(f"Directga Gemini AI javobi muvaffaqiyatli yuborildi: {res.json()}")
+            else:
+                logger.error(f"Directga javob yuborishda Graph API xatoligi ({res.status_code}): {res.text}")
         except Exception as e:
-            logger.error(f"Directga javob yuborishda xatolik: {e}")
+            logger.error(f"Directga javob yuborishda tarmoq xatoligi: {e}")
