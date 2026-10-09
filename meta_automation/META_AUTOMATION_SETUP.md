@@ -75,6 +75,37 @@ Tizim 2 ta asosiy qatlamdan iborat:
   👉 https://t.me/klinikatesttt_bot?start=insta
   ```
 
+### 6. 👋 Salomlashish (Xush kelibsiz)
+- **Trigger kalit so'zlar:** `salom`, `assalomu alaykum`, `assalom`, `salomalaykum`, `hayrli kun`
+- **Javob matni:**
+  ```text
+  Assalomu alaykum! Klinikamizga xush kelibsiz. 😊
+
+  Sizga qanday yordam bera olamiz?
+  Quyidagi mavzulardan birini yozishingiz yoki qabulga yozilish uchun botimizdan foydalanishingiz mumkin:
+  • Narxlar
+  • Manzil va ish vaqti
+  • Shifokorlar
+  • Navbatga yozilish
+
+  👉 https://t.me/klinikatesttt_bot?start=insta
+  ```
+
+---
+
+## ⚖️ Meta Business Suite Cheklovlari va Qoidalari
+
+1. **Trigger so'zlar limiti (har bir mavzuda):**
+   - Har bitta alohida avtomatlashtirishga **maksimal 5 tagacha** kalit so'z yoki ibora kiritish mumkin.
+   - Biroq mavzularning (avtomatlashtirishlarning) o'zini istagancha ko'p yaratish mumkin (biz allaqachon 6 ta yaratdik).
+
+2. **Kutish vaqti (Cooldown - 15 daqiqa):**
+   - Agar bitta foydalanuvchi qisqa vaqt ichida aynan bir xil so'zni (masalan ketma-ket bir necha bor "salom") yozaversa, Instagram uni spam qilmaslik uchun ayni bir xil javobni har daqiqada qaytaravermaydi. 15 daqiqa ichida har bir triggerga 1 marta javob beradi (boshqa mavzuni yozsa darhol unga mos yangi javob beradi).
+
+3. **Xarajat va xavfsizlik (100% Bepul va Rasmiy):**
+   - ManyChat'dan farqli o'laroq, obunachilar yoki xabarlar soniga qarab oylik to'lov yo'q.
+   - Meta'ning rasmiy ichki tizimi bo'lgani uchun akkaunt bloklanish yoki token eskirib qolish xavfi yo'q.
+
 ---
 
 ## 🛠 Avtomatlashtirish Skriptlari (`meta_automation/`)
