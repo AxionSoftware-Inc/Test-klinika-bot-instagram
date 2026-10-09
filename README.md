@@ -6,6 +6,7 @@ Bu tizim Instagramdan kelayotgan ommaviy mijozlar oqimini (komment va Direct) av
 
 ## 📂 Loyiha Tuzilishi
 
+- **`meta_automation/META_AUTOMATION_SETUP.md`** — Meta Business Suite (Instagram & Facebook) orqali rasmiy avtomatlashtirish, 5 ta yo'nalish bo'yicha trigger so'zlar va javoblar qo'llanmasi.
 - **`MANYCHAT_SETUP.md`** — ManyChat-da Reels/Post kommentlariga avto-javob, Direct xabarlari va Telegram tugmasini sozlash bo'yicha vizual qo'llanma.
 - **`main.py`** — Telegram botning asosiy ishga tushirish fayli.
 - **`handlers.py`** — Start, Narxlar, Shifokorlar, Manzil va Qabulga yozilish logikasi.

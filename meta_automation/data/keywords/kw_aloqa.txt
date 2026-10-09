@@ -1,0 +1,5 @@
+aloqa
+telefon
+nomer
+tel
+raqam
