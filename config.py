@@ -5,7 +5,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_GROUP_ID = os.getenv("ADMIN_GROUP_ID", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDIXr_GOpeY5np87-BDxUiMWRhRlJATj0Q")
 
 CLINIC_NAME = os.getenv("CLINIC_NAME", "Bizning Klinika")
 CLINIC_PHONE = os.getenv("CLINIC_PHONE", "+998 71 123 45 67")

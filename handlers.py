@@ -206,7 +206,7 @@ async def ai_consultant_handler(message: Message, bot: Bot):
         pass
 
     user_query = message.text.strip()
-    ai_response = await ask_gemini(user_query)
+    ai_response = await ask_gemini(user_query, user_id=message.from_user.id)
 
     try:
         await message.answer(
