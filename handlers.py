@@ -301,6 +301,20 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, prefer
         except Exception as e:
             logger.warning(f"Egasiga ({oid}) xabar yuborishda xatolik: {e}")
 
+    # Agar admin guruhi ko'rsatilgan bo'lsa, guruhga ham yuborish
+    if ADMIN_GROUP_ID:
+        try:
+            group_id = int(ADMIN_GROUP_ID.strip())
+            await bot.send_message(
+                chat_id=group_id,
+                text=owner_notification,
+                parse_mode="Markdown"
+            )
+            logger.info(f"✅ Arizani admin guruhiga ({group_id}) yuborildi.")
+        except Exception as e:
+            logger.warning(f"Admin guruhiga ({ADMIN_GROUP_ID}) xabar yuborishda xatolik: {e}")
+
+
 
 # 📋 /leads buyrug'i - tushgan barcha arizalarni faqat egasiga ko'rsatish
 @router.message(F.text == "/leads")
