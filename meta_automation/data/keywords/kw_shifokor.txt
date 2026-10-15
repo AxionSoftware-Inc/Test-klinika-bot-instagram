@@ -1,5 +1,6 @@
 shifokor
 doktor
 vrach
-stomatolog
+endokrinolog
+diabetolog
 mutaxassis

@@ -15,7 +15,7 @@ app = FastAPI(title="Instagram Meta Webhook for Clinic")
 # Sozlamalar (.env dan olinadi)
 VERIFY_TOKEN = os.getenv("INSTAGRAM_VERIFY_TOKEN", "klinika_secret_verify_token_2026")
 PAGE_ACCESS_TOKEN = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN", "")
-BOT_TELEGRAM_LINK = "https://t.me/klinikatesttt_bot?start=insta"
+BOT_TELEGRAM_LINK = os.getenv("BOT_TELEGRAM_LINK", "https://t.me/sharqonaklinika_bot?start=insta")
 
 GRAPH_API_URL = "https://graph.facebook.com/v21.0"
 

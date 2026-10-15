@@ -30,7 +30,7 @@ Tizim 2 ta asosiy qatlamdan iborat:
   • Tish tozalash va oqartirish — 200 000 so‘mdan
 
   Barcha narxlar va qabulga yozilish:
-  👉 https://t.me/klinikatesttt_bot?start=insta
+  👉 https://t.me/sharqonaklinika_bot?start=insta
   ```
 
 ### 2. 📍 Manzil va ish vaqti
@@ -41,7 +41,7 @@ Tizim 2 ta asosiy qatlamdan iborat:
   ⏰ Ish vaqti: Dushanba - Shanba, 08:30 dan 18:00 gacha (Yakshanba dam olish kuni).
 
   Xaritada ko‘rish va navbatga yozilish:
-  👉 https://t.me/klinikatesttt_bot?start=insta
+  👉 https://t.me/sharqonaklinika_bot?start=insta
   ```
 
 ### 3. 👨‍⚕️ Shifokorlar
@@ -51,7 +51,7 @@ Tizim 2 ta asosiy qatlamdan iborat:
   👨‍⚕️ Klinikamizda yuqori toifali stomatolog va terapevt shifokorlar qabul o‘tkazadi.
 
   Barcha shifokorlar ro‘yxati va ko‘rikka yozilish:
-  👉 https://t.me/klinikatesttt_bot?start=insta
+  👉 https://t.me/sharqonaklinika_bot?start=insta
   ```
 
 ### 4. 📝 Qabulga yozilish
@@ -59,7 +59,7 @@ Tizim 2 ta asosiy qatlamdan iborat:
 - **Javob matni:**
   ```text
   Qabulga navbatsiz yozilish uchun rasmiy Telegram botimizdan foydalaning:
-  👉 https://t.me/klinikatesttt_bot?start=insta
+  👉 https://t.me/sharqonaklinika_bot?start=insta
 
   Botda bir necha soniyada o‘zingizga qulay vaqtni band qilishingiz mumkin.
   ```
@@ -72,7 +72,7 @@ Tizim 2 ta asosiy qatlamdan iborat:
   ⏰ Qo‘ng‘iroqlar: 08:30 dan 18:00 gacha
 
   Savollar va qabulga yozilish:
-  👉 https://t.me/klinikatesttt_bot?start=insta
+  👉 https://t.me/sharqonaklinika_bot?start=insta
   ```
 
 ### 6. 👋 Salomlashish (Xush kelibsiz)
@@ -88,7 +88,7 @@ Tizim 2 ta asosiy qatlamdan iborat:
   • Shifokorlar
   • Navbatga yozilish
 
-  👉 https://t.me/klinikatesttt_bot?start=insta
+  👉 https://t.me/sharqonaklinika_bot?start=insta
   ```
 
 ---
@@ -122,8 +122,8 @@ Ushbu katalogda sozlamalarni Safari orqali avtomatik Meta Business Suite'ga yukl
 
 ## 🔗 Telegram Bot bilan Integratsiya
 
-Har bir javob ostida foydalanuvchini rasmiy Telegram botiga (`@klinikatesttt_bot`) yo'naltiruvchi maxsus havola mavjud:
+Har bir javob ostida foydalanuvchini rasmiy Telegram botiga (`@sharqonaklinika_bot`) yo'naltiruvchi maxsus havola mavjud:
 ```
-https://t.me/klinikatesttt_bot?start=insta
+https://t.me/sharqonaklinika_bot?start=insta
 ```
 Mijoz botga o'tganda bot uni qabul qiladi, xizmat turini va shifokorni tanlatib, telefon raqamini oladi hamda admin/operator guruhiga navbat buyurtmasi sifatida yuboradi.

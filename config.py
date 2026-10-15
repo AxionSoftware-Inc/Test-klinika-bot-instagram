@@ -1,24 +1,65 @@
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_ID = os.getenv("ADMIN_ID", "")
 ADMIN_GROUP_ID = os.getenv("ADMIN_GROUP_ID", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDIXr_GOpeY5np87-BDxUiMWRhRlJATj0Q")
 
-CLINIC_NAME = os.getenv("CLINIC_NAME", "Bizning Klinika")
-CLINIC_PHONE = os.getenv("CLINIC_PHONE", "+998 71 123 45 67")
-CLINIC_ADDRESS = os.getenv("CLINIC_ADDRESS", "Toshkent shahri, Markaziy ko'cha, 1-uy")
-CLINIC_LOCATION_LAT = float(os.getenv("CLINIC_LOCATION_LAT", "41.311081"))
-CLINIC_LOCATION_LON = float(os.getenv("CLINIC_LOCATION_LON", "69.240562"))
+OWNER_FILE = os.path.join(os.path.dirname(__file__), "owner.json")
 
-# Klinika xizmatlari va narxlari (o'zgartirish oson bo'lishi uchun bu yerda saqlanadi)
+def get_owner_ids():
+    ids = set()
+    if ADMIN_ID:
+        for x in ADMIN_ID.split(","):
+            if x.strip().lstrip("-").isdigit():
+                ids.add(int(x.strip()))
+    if os.path.exists(OWNER_FILE):
+        try:
+            with open(OWNER_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and "owner_id" in data:
+                    ids.add(int(data["owner_id"]))
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, int):
+                            ids.add(item)
+                        elif isinstance(item, dict) and "owner_id" in item:
+                            ids.add(int(item["owner_id"]))
+        except Exception:
+            pass
+    return list(ids)
+
+def save_owner_id(owner_id: int, username: str = ""):
+    data = {"owner_id": owner_id, "username": username}
+    with open(OWNER_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+BOT_USERNAME = os.getenv("BOT_USERNAME", "sharqonaklinika_bot")
+BOT_LINK = f"https://t.me/{BOT_USERNAME}"
+BOT_INSTA_LINK = f"https://t.me/{BOT_USERNAME}?start=insta"
+
+CLINIC_NAME = os.getenv("CLINIC_NAME", "Sharqona salomatlik markazi")
+CLINIC_LEGAL_NAME = os.getenv("CLINIC_LEGAL_NAME", "«Samara End Ko Shahrisabz» MCHJ")
+CLINIC_PHONE = os.getenv("CLINIC_PHONE", "+998 95 676 18 08, +998 91 135 34 32, +998 97 588 01 40")
+CLINIC_PHONES_LIST = [
+    "+998 95 676 18 08",
+    "+998 91 135 34 32",
+    "+998 97 588 01 40"
+]
+CLINIC_ADDRESS = os.getenv("CLINIC_ADDRESS", "Shahrisabz shahri, Tez yordam klinikasi ro'parasi")
+CLINIC_LOCATION_LAT = float(os.getenv("CLINIC_LOCATION_LAT", "39.042527"))
+CLINIC_LOCATION_LON = float(os.getenv("CLINIC_LOCATION_LON", "66.828387"))
+
+# Qand kasalligini davolashga ixtisoslashgan xizmatlar va narxlar
 SERVICES_AND_PRICES = [
-    {"name": "🩺 Terapevt ko'rigi", "price": "150,000 so'm"},
-    {"name": "🦷 Stomatolog maslahati", "price": "100,000 so'm"},
-    {"name": "🔬 Umumiy qon tahlili", "price": "70,000 so'm"},
-    {"name": "🫀 EKG (Kardiogramma)", "price": "120,000 so'm"},
-    {"name": "🖥 UZI (Barcha a'zolar)", "price": "180,000 so'm"},
-    {"name": "👨‍⚕️ Nevropatolog qabuli", "price": "160,000 so'm"},
+    {"name": "🩺 Qand kasalligini davolash kursi (konsultatsiya ichida)", "price": "500 000 – 600 000 so'm"},
+    {"name": "👨‍⚕️ Shifokor-diabetolog to'liq konsultatsiyasi va ko'rigi", "price": "Davolash kursi ichida"},
+    {"name": "📋 Individual davolash va sog'lomlashtirish dasturi", "price": "Davolash kursi ichida"},
+    {"name": "🩸 Qand miqdori va glyukometriya nazorati", "price": "Kurs ichida kiritilgan"},
+    {"name": "🥗 Shaxsiy parhez va ovqatlanish taomnomasi", "price": "Kurs ichida kiritilgan"},
+    {"name": "🦶 Diabet asoratlari profilaktikasi va tavsiyalar", "price": "Kurs ichida kiritilgan"},
 ]

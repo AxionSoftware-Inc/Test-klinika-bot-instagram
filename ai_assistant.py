@@ -1,13 +1,17 @@
+import os
+import json
 import asyncio
 import logging
 import time
-from typing import Optional, Dict, Tuple
+import urllib.request
+from typing import Optional, Dict, Tuple, List
 from google import genai
 from google.genai import types
 
 from config import (
     GEMINI_API_KEY,
     CLINIC_NAME,
+    CLINIC_LEGAL_NAME,
     CLINIC_PHONE,
     CLINIC_ADDRESS,
     SERVICES_AND_PRICES
@@ -15,12 +19,18 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# Foydalanuvchilarning oxirgi interaction ID va vaqti: {user_id: (interaction_id, timestamp)}
+# OpenRouter kaliti
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "") or (
+    GEMINI_API_KEY if (GEMINI_API_KEY and GEMINI_API_KEY.startswith("sk-or-")) else ""
+)
+
+# Foydalanuvchilarning suhbat tarixi: {user_id: ([(role, text), ...], timestamp)}
+user_histories: Dict[int, Tuple[List[Dict[str, str]], float]] = {}
 user_sessions: Dict[int, Tuple[str, float]] = {}
 SESSION_TIMEOUT_SECONDS = 1800  # 30 daqiqa
 
 client: Optional[genai.Client] = None
-if GEMINI_API_KEY:
+if GEMINI_API_KEY and not GEMINI_API_KEY.startswith("sk-or-"):
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
     except Exception as e:
@@ -29,98 +39,131 @@ if GEMINI_API_KEY:
 services_text = "\n".join([f"• {s['name']}: {s['price']}" for s in SERVICES_AND_PRICES])
 
 SYSTEM_INSTRUCTION = f"""
-Siz — {CLINIC_NAME} klinikasining rasmiy, yuqori malakali, xushmuomala va aqlli AI maslahatchisisiz.
+Siz — «{CLINIC_NAME}» ({CLINIC_LEGAL_NAME}ga qarashli) qand kasalligini davolashga ixtisoslashgan markazining rasmiy, yuqori malakali, xushmuomala va tibbiy savodli AI maslahatchisisiz.
 
 Klinikamiz haqida rasmiy ma'lumotlar:
-- Nomi: {CLINIC_NAME}
-- Telefon: {CLINIC_PHONE}
-- Manzil: {CLINIC_ADDRESS}
+- Nomi: «{CLINIC_NAME}» ({CLINIC_LEGAL_NAME})
+- Joylashuv va manzil: {CLINIC_ADDRESS}
+- Telefonlar: {CLINIC_PHONE}
 - Ish vaqti: Dushanba - Shanba, 08:30 dan 18:00 gacha (Yakshanba: Dam olish kuni)
-- Asosiy xizmatlar va narxlar:
-{services_text}
-• Stomatolog ko‘rigi va konsultatsiya: Bepul
-• Tish plomba qilish: 150 000 so‘mdan
-• Tish tozalash va oqartirish: 200 000 so‘mdan
+- Davolash kursi va narxlar:
+  • Qand kasalligini davolash kursi: 500 000 – 600 000 so'm (Shifokor-diabetolog konsultatsiyasi, ko'rik, glyukometriya nazorati va parhez rejasi to'liq ushbu narx ichida!)
 
-QOIDALAR:
-1. Mijozga do'stona, samimiy, madaniyatli va aniq o'zbek tilida javob bering.
-2. Agar salomlashsa yoki minnatdorchilik bildirsa, juda chiroyli alik oling va iliq muomala qiling.
-3. Mijozning savollariga (narx, og'riqsiz davolash, kafolat, manzil, shifokorlar, ish vaqti) to'liq va tushunarli javob bering.
-4. Har doim bemorni ortiqcha xavotirga solmasdan, tinchlantiring va ko'rikka kelishga undash orqali yordam taklif qiling.
-5. Javobingiz lo'nda, o'qishga juda qulay bo'lsin.
-6. Matn oxirida mijozga navbatga yozilish qulay bo'lishi uchun quyidagi jumlani qo'shing:
-"Qabulga navbatsiz yozilish uchun pastdagi tugmani bosing 👇"
+BIZNING ASOSIY YO'NALISHLARIMIZ:
+1. Qandli diabet (1-tur va 2-tur)ni zamonaviy usulda samarali davolash va nazorat qilish.
+2. Qondagi qand miqdorini xavfsiz normallashtirish va insulin dozasini to'g'ri belgilash.
+3. Diabet asoratlarining (diabetik stopa/oyoq, ko'rish pasayishi/retinopatiya, buyrak zararlanishi) oldini olish va davolash.
+4. Glikolizlangan gemoglobin (HbA1c) va ekspress qand tahlillari.
+5. Shaxsiy parhez va to'g'ri ovqatlanish rejasini ishlab chiqish (Diabet maktabi).
+
+QOIDALAR VA QAT'IY CHEKLOVLAR:
+1. Mijozga samimiy, madaniyatli, tushunarli va aniq o'zbek tilida javob bering.
+2. JAVOBLAR LO'NDA VA QISQA BO'LSIN (2-4 jumladan oshmasin, ortiqcha gap, uzun matnlar va keraksiz ma'lumotlar yozmang).
+3. TIBBIY CHEKLOV: O'zboshimchalik bilan dori-darmon, ukol yoki mustaqil davolash usullarini ASLO TAVSIYA QILMANG. Barcha tibbiy savollarda bemorga aniq tashxis va davo faqat klinikamizda shifokor ko'rigida qo'yilishini aytib, ko'rikka taklif qiling.
+4. Narx haqida so'ralsa: Davolash kursi 500 000 – 600 000 so'm ekanligini va shifokor konsultatsiyasi hamda ko'rigi to'liq shu narx ichida ekanligini ayting.
+5. Manzil haqida so'ralsa: Shahrisabz shahri, Tez yordam klinikasi ro'parasida joylashganimizni ma'lum qiling.
+6. Telefonlar haqida so'ralsa: +998 95 676 18 08, +998 91 135 34 32, +998 97 588 01 40 raqamlarini bering.
+7. Klinika xizmatlariga kirmaydigan ma'lumotlarni o'zingizdan to'qimang, administratorga bog'lanishni ayting.
+8. Har doim javobingiz oxirida mijozga ko'rikka yozilish uchun telefon raqami va o'ziga qulay bo'sh vaqtini qoldirishni taklif qiling:
+"Qabulga yozilish uchun telefon raqamingiz va bo'sh vaqtingizni qoldiring yoki pastdagi tugmani bosing 👇"
 """
+
+
+def _call_openrouter(user_message: str, history: List[Dict[str, str]]) -> Optional[str]:
+    """OpenRouter orqali Gemini 3.5 Flash-Lite modeliga murojaat qilish"""
+    if not OPENROUTER_API_KEY:
+        return None
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://klinika.uz",
+        "X-Title": "Klinika Diabet Maslahatchisi"
+    }
+
+    messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+
+    payload = {
+        "model": "google/gemini-3.5-flash-lite",
+        "messages": messages,
+        "temperature": 0.4
+    }
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = data.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "").strip()
+    except Exception as e:
+        logger.warning(f"OpenRouter so'rovida xatolik: {e}")
+        return None
+
+    return None
+
 
 async def ask_gemini(user_message: str, user_id: Optional[int] = None) -> str:
     """Foydalanuvchi savoliga Gemini 3.5 Flash-Lite orqali aqlli javob qaytarish"""
-    if not client:
-        return (
-            f"Assalomu alaykum! {CLINIC_NAME} klinikasiga xush kelibsiz. 😊\n\n"
-            "Savollaringiz bo'yicha ma'lumot olish yoki qabulga yozilish uchun "
-            "quyidagi tugmalardan foydalanishingiz mumkin 👇"
-        )
-
-    # Context (oldingi suhbat xotirasi) mavjudligini tekshirish
-    prev_interaction_id = None
     now = time.time()
-    if user_id and user_id in user_sessions:
-        saved_id, last_time = user_sessions[user_id]
+    history: List[Dict[str, str]] = []
+
+    if user_id and user_id in user_histories:
+        saved_hist, last_time = user_histories[user_id]
         if now - last_time < SESSION_TIMEOUT_SECONDS:
-            prev_interaction_id = saved_id
+            history = saved_hist[-6:]  # Oxirgi 3 ta savol-javob
         else:
-            del user_sessions[user_id]
+            del user_histories[user_id]
 
-    models_to_try = ["gemini-3.5-flash-lite", "gemini-3.8-flash"]
+    # 1. OpenRouter (Gemini 3.5 Flash Lite) orqali sinab ko'rish
+    try:
+        or_answer = await asyncio.to_thread(_call_openrouter, user_message, history)
+        if or_answer:
+            if user_id:
+                history.append({"role": "user", "content": user_message})
+                history.append({"role": "assistant", "content": or_answer})
+                user_histories[user_id] = (history, time.time())
+            return or_answer
+    except Exception as e:
+        logger.warning(f"OpenRouter chaqiruvida xatolik: {e}")
 
-    for model_name in models_to_try:
-        # 1. Eng yangi Interactions API orqali kontekst bilan sinab ko'rish
-        try:
-            def _call_interaction():
-                if prev_interaction_id:
-                    try:
-                        return client.interactions.create(
-                            model=model_name,
-                            input=user_message,
-                            previous_interaction_id=prev_interaction_id
+    # 2. Google GenAI SDK orqali sinab ko'rish (agar mijoz kaliti mavjud bo'lsa)
+    if client:
+        models_to_try = ["gemini-3.5-flash-lite", "gemini-3.8-flash"]
+        for model_name in models_to_try:
+            try:
+                def _call_generate():
+                    return client.models.generate_content(
+                        model=model_name,
+                        contents=user_message,
+                        config=types.GenerateContentConfig(
+                            system_instruction=SYSTEM_INSTRUCTION,
+                            temperature=0.4,
+                            max_output_tokens=700,
                         )
-                    except Exception as ex:
-                        logger.info(f"Context expired or failed ({ex}), starting fresh interaction...")
-                return client.interactions.create(
-                    model=model_name,
-                    input=user_message,
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
-
-            interaction = await asyncio.to_thread(_call_interaction)
-            if interaction and interaction.output_text:
-                if user_id and interaction.id:
-                    user_sessions[user_id] = (interaction.id, time.time())
-                return interaction.output_text.strip()
-        except Exception as e:
-            logger.warning(f"Interactions API ({model_name}) xatolik: {e}, models API sinab ko'rilmoqda...")
-
-        # 2. Fallback: models.generate_content orqali sinab ko'rish
-        try:
-            def _call_generate():
-                return client.models.generate_content(
-                    model=model_name,
-                    contents=user_message,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        temperature=0.5,
-                        max_output_tokens=700,
                     )
-                )
 
-            gen_res = await asyncio.to_thread(_call_generate)
-            if gen_res and gen_res.text:
-                return gen_res.text.strip()
-        except Exception as e:
-            logger.warning(f"GenerateContent ({model_name}) xatolik: {e}")
+                gen_res = await asyncio.to_thread(_call_generate)
+                if gen_res and gen_res.text:
+                    ans = gen_res.text.strip()
+                    if user_id:
+                        history.append({"role": "user", "content": user_message})
+                        history.append({"role": "assistant", "content": ans})
+                        user_histories[user_id] = (history, time.time())
+                    return ans
+            except Exception as e:
+                logger.warning(f"Google GenAI ({model_name}) xatolik: {e}")
 
     return (
-        f"Assalomu alaykum! {CLINIC_NAME} klinikasiga xush kelibsiz. 😊\n\n"
+        f"Assalomu alaykum! {CLINIC_NAME} qand kasalligini davolash markaziga xush kelibsiz. 😊\n\n"
         "Sizga qanday yordam bera olamiz? Xizmatlarimiz, narxlar yoki "
         "qabulga yozilish uchun quyidagi tugmani bosing 👇"
     )
