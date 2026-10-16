@@ -45,7 +45,8 @@ cancel_keyboard = ReplyKeyboardMarkup(
 quick_book_inline = InlineKeyboardMarkup(
     inline_keyboard=[
         [
-            InlineKeyboardButton(text="📝 Qabulga yozilish (Raqam va bo'sh vaqt qoldirish)", callback_data="book_appointment")
+            InlineKeyboardButton(text="📝 Qabulga yozilish (Raqam qoldirish)", callback_data="book_appointment")
         ]
+
     ]
 )

@@ -23,18 +23,18 @@ from config import (
     CLINIC_LOCATION_LON,
     SERVICES_AND_PRICES,
     get_owner_ids,
-    save_owner_id
+    save_owner_id,
+    save_user
 )
 from keyboards import main_menu, phone_keyboard, cancel_keyboard, quick_book_inline
 from ai_assistant import ask_gemini
 
 router = Router()
 
-# Qabulga yozilish FSM holatlari (Ism -> Telefon -> Bo'sh vaqti)
+# Qabulga yozilish FSM holati
 class BookingState(StatesGroup):
-    waiting_for_name = State()
     waiting_for_phone = State()
-    waiting_for_time = State()
+
 
 
 # /start buyrug'i (Instagramdan start=insta orqali kelganlarni ham aniqlaydi)
@@ -43,9 +43,11 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     await state.clear()
     
     user = message.from_user
+    save_user(user.id, user.username or "", user.full_name or "")
     logger.info(
         f"🟢 /start: ID={user.id}, Ism={user.full_name}, Username=@{user.username}, Manba={command.args or 'telegram'}"
     )
+
     
     source_text = ""
     if command.args == "insta":
@@ -143,121 +145,89 @@ async def show_location(message: Message):
 # 📝 Qabulga yozilish jarayonini boshlash
 @router.message(F.text == "📝 Qabulga yozilish")
 async def start_booking(message: Message, state: FSMContext):
-    await state.set_state(BookingState.waiting_for_name)
-    await message.answer(
-        "Iltimos, ism va familiyangizni kiriting:",
-        reply_markup=cancel_keyboard
+    await state.clear()
+    await state.set_state(BookingState.waiting_for_phone)
+    text = (
+        "📞 *Shifokor qabuliga yozilish:*\n\n"
+        "Siz bilan bog'lanishimiz uchun quyidagi **«📱 Telefon raqamni yuborish»** tugmasini bosing yoki telefon raqamingizni yozib yuboring 👇\n\n"
+        "Administratorlarimiz siz bilan tezda bog'lanib, o'zingizga qulay qabul vaqtini kelishib oladilar."
     )
+    await message.answer(text, reply_markup=phone_keyboard, parse_mode="Markdown")
 
 
 # Inline tugma orqali qabulga yozilish bosilganda
 @router.callback_query(F.data == "book_appointment")
 async def inline_book_appointment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await state.set_state(BookingState.waiting_for_name)
-    await callback.message.answer(
-        "Iltimos, ism va familiyangizni kiriting:",
-        reply_markup=cancel_keyboard
-    )
-
-
-# 1-Qadam: Ismni qabul qilish va telefon raqam so'rash
-@router.message(BookingState.waiting_for_name)
-async def process_name(message: Message, state: FSMContext):
-    name = message.text.strip()
-    if len(name) < 2:
-        await message.answer("Iltimos, to'liq ismingizni kiriting:")
-        return
-
-    await state.update_data(name=name)
+    await state.clear()
     await state.set_state(BookingState.waiting_for_phone)
-    await message.answer(
-        f"Rahmat, {name}!\n\n"
-        "Endi siz bilan bog'lanishimiz uchun "
-        "quyidagi tugmani bosib telefon raqamingizni yuboring yoki qo'lda kiriting (+998901234567):",
-        reply_markup=phone_keyboard
+    text = (
+        "📞 *Shifokor qabuliga yozilish:*\n\n"
+        "Siz bilan bog'lanishimiz uchun quyidagi **«📱 Telefon raqamni yuborish»** tugmasini bosing yoki telefon raqamingizni yozib yuboring 👇"
     )
+    await callback.message.answer(text, reply_markup=phone_keyboard, parse_mode="Markdown")
 
 
-# 2-Qadam: Telefon raqamni qabul qilish (Kontakt tugmasi orqali)
+# 📱 Telefon raqamni kontakt orqali qabul qilish
 @router.message(BookingState.waiting_for_phone, F.contact)
-async def process_phone_contact(message: Message, state: FSMContext):
+async def process_phone_contact(message: Message, state: FSMContext, bot: Bot):
     phone_number = message.contact.phone_number
     if not phone_number.startswith("+"):
         phone_number = "+" + phone_number
-    await state.update_data(phone=phone_number)
-    await state.set_state(BookingState.waiting_for_time)
-    await message.answer(
-        f"Telefon raqamingiz qabul qilindi: `{phone_number}`\n\n"
-        "⏰ *Endi sizga qaysi kun yoki soatda kelish / bog'lanish qulay (bo'sh vaqtingiz)?*\n\n"
-        "_(Masalan: Ertaga soat 14:00 da, Dushanba kuni ertalab yoki xohlagan qulay vaqtingizni yozing)_",
-        reply_markup=cancel_keyboard,
-        parse_mode="Markdown"
-    )
+
+    user_name = message.contact.first_name or ""
+    if message.contact.last_name:
+        user_name += f" {message.contact.last_name}"
+    user_name = user_name.strip() or (message.from_user.full_name or "Mijoz")
+
+    await finalize_booking(message, state, bot, phone_number, user_name)
 
 
-# 2-Qadam: Telefon raqamni qabul qilish (Qo'lda yozilganda)
+# 📱 Telefon raqamni matn sifatida yozganda qabul qilish
 @router.message(BookingState.waiting_for_phone, F.text)
-async def process_phone_text(message: Message, state: FSMContext):
-    phone_number = message.text.strip()
-    # Raqamni tekshirish
-    cleaned = re.sub(r"[^\d+]", "", phone_number)
+async def process_phone_text(message: Message, state: FSMContext, bot: Bot):
+    raw_phone = message.text.strip()
+    cleaned = re.sub(r"[^\d+]", "", raw_phone)
     if len(cleaned.replace("+", "")) < 7:
-        await message.answer("Iltimos, to'g'ri telefon raqam kiriting (masalan: +998901234567):")
+        await message.answer(
+            "Iltimos, to'g'ri telefon raqam kiriting (masalan: `+998901234567`) yoki pastdagi **«📱 Telefon raqamni yuborish»** tugmasini bosing:",
+            reply_markup=phone_keyboard,
+            parse_mode="Markdown"
+        )
         return
 
+    phone_number = cleaned
     if not phone_number.startswith("+") and len(cleaned) == 9:
         phone_number = "+998" + cleaned
     elif not phone_number.startswith("+") and len(cleaned) == 12:
         phone_number = "+" + cleaned
 
-    await state.update_data(phone=phone_number)
-    await state.set_state(BookingState.waiting_for_time)
-    await message.answer(
-        f"Telefon raqamingiz qabul qilindi: `{phone_number}`\n\n"
-        "⏰ *Endi sizga qaysi kun yoki soatda kelish / bog'lanish qulay (bo'sh vaqtingiz)?*\n\n"
-        "_(Masalan: Ertaga soat 14:00 da, Dushanba kuni ertalab yoki xohlagan qulay vaqtingizni yozing)_",
-        reply_markup=cancel_keyboard,
-        parse_mode="Markdown"
-    )
+    user_name = message.from_user.full_name or "Mijoz"
+    await finalize_booking(message, state, bot, phone_number, user_name)
 
 
-# 3-Qadam: Bo'sh vaqtni qabul qilish va yakunlash
-@router.message(BookingState.waiting_for_time, F.text)
-async def process_time_text(message: Message, state: FSMContext, bot: Bot):
-    preferred_time = message.text.strip()
-    if len(preferred_time) < 2:
-        await message.answer("Iltimos, sizga qulay bo'sh vaqtingizni yozing:")
-        return
-
-    await finalize_booking(message, state, bot, preferred_time)
-
-
-# Yakuniy qadam: Ariza ma'lumotlarini saqlash va Bot egasiga yuborish
-async def finalize_booking(message: Message, state: FSMContext, bot: Bot, preferred_time: str):
-    data = await state.get_data()
-    user_name = data.get("name", message.from_user.full_name or "Noma'lum")
-    phone_number = data.get("phone", "Ko'rsatilmadi")
+# Yakuniy qadam: Ariza ma'lumotlarini saqlash va Bot egasiga hamda Admin guruhiga yuborish
+async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_number: str, user_name: str):
+    await state.clear()
     user = message.from_user
     username_text = f"@{user.username}" if user.username else "Mavjud emas"
     lead_time = time.strftime("%Y-%m-%d %H:%M:%S")
 
     # Mijozga tasdiq xabari
-    await message.answer(
-        f"✅ *Arizangiz qabul qilindi!*\n\n"
-        f"Siz ko'rsatgan qulay vaqtda (*{preferred_time}*) klinika ma'murlari siz bilan bog'lanishadi.\n\n"
-        "Salomat bo'ling!",
-        reply_markup=main_menu,
-        parse_mode="Markdown"
+    confirmation_text = (
+        f"✅ *Arizangiz muvaffaqiyatli qabul qilindi!*\n\n"
+        f"👤 *F.I.O:* {user_name}\n"
+        f"📞 *Telefon:* `{phone_number}`\n\n"
+        "Tez orada klinika ma'murlari siz bilan bog'lanishadi va sizga eng ma'qul qabul vaqtini belgilab berishadi.\n\n"
+        "Salomat bo'ling! 😊"
     )
-    await state.clear()
+    await message.answer(confirmation_text, reply_markup=main_menu, parse_mode="Markdown")
 
-    # Ariza ma'lumotlarini faylga saqlash (leads.json)
+    # Ariza ma'lumotlarini leads.json ga saqlash
     lead_entry = {
         "time": lead_time,
         "name": user_name,
         "phone": phone_number,
-        "preferred_time": preferred_time,
         "user_id": user.id,
         "username": user.username,
         "full_name": user.full_name
@@ -275,44 +245,35 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, prefer
     except Exception as e:
         logger.error(f"Arizani saqlashda xatolik: {e}")
 
-    # Bot egasiga bildirishnoma tayyorlash
+    # Bildirishnoma matni
     owner_notification = (
-        "🔔 *YANGI ARIZA / MIJOZ MA'LUMOTLARI!*\n"
+        "🔔 *YANGI ARIZA / QABULGA YOZILISH!*\n"
         "────────────────────\n"
         f"👤 *F.I.O:* {user_name}\n"
         f"📞 *Telefon:* `{phone_number}`\n"
-        f"⏰ *Bo'sh vaqti:* {preferred_time}\n"
         f"💬 *Telegram:* {username_text} (ID: `{user.id}`)\n"
         f"📅 *Vaqt:* {lead_time}\n"
         "────────────────────\n"
-        "📌 *Holat:* Mijoz sizning bog'lanishingizni kutmoqda."
+        "📌 *Holat:* Bemor aloqaga chiqishingizni kutmoqda."
     )
 
-    # Bot egasiga (shaxsiy chatiga) yuborish
-    owner_ids = get_owner_ids()
-    for oid in owner_ids:
+    # Bot egasiga yuborish
+    for oid in get_owner_ids():
         try:
-            await bot.send_message(
-                chat_id=oid,
-                text=owner_notification,
-                parse_mode="Markdown"
-            )
-            logger.info(f"✅ Arizani egasiga ({oid}) yuborildi.")
+            await bot.send_message(chat_id=oid, text=owner_notification, parse_mode="Markdown")
+            logger.info(f"✅ Ariza egasiga ({oid}) yuborildi.")
         except Exception as e:
             logger.warning(f"Egasiga ({oid}) xabar yuborishda xatolik: {e}")
 
-    # Agar admin guruhi ko'rsatilgan bo'lsa, guruhga ham yuborish
+    # Admin guruhiga yuborish
     if ADMIN_GROUP_ID:
         try:
             group_id = int(ADMIN_GROUP_ID.strip())
-            await bot.send_message(
-                chat_id=group_id,
-                text=owner_notification,
-                parse_mode="Markdown"
-            )
-            logger.info(f"✅ Arizani admin guruhiga ({group_id}) yuborildi.")
+            await bot.send_message(chat_id=group_id, text=owner_notification, parse_mode="Markdown")
+            logger.info(f"✅ Ariza admin guruhiga ({group_id}) yuborildi.")
         except Exception as e:
             logger.warning(f"Admin guruhiga ({ADMIN_GROUP_ID}) xabar yuborishda xatolik: {e}")
+
 
 
 
@@ -336,17 +297,17 @@ async def cmd_leads(message: Message):
             await message.answer("ℹ️ Arizalar ro'yxati bo'sh.")
             return
 
-        text = f"📋 *Kelib tushgan arizalar va raqamlar ({len(leads)} ta):*\n\n"
+        text = f"📋 *Kelib tushgan arizalar ({len(leads)} ta):*\n\n"
         for i, lead in enumerate(leads[-20:], 1):
             text += (
                 f"{i}. 👤 *{lead.get('name')}*\n"
                 f"   📞 Telefon: `{lead.get('phone')}`\n"
-                f"   ⏰ Bo'sh vaqti: *{lead.get('preferred_time', 'Ko‘rsatilmagan')}*\n"
                 f"   📅 Vaqti: {lead.get('time')}\n"
                 f"   💬 Telegram: @{lead.get('username') or 'yoq'} (ID: `{lead.get('user_id')}`)\n"
                 "────────────────────\n"
             )
         await message.answer(text, parse_mode="Markdown")
+
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
@@ -356,7 +317,9 @@ async def cmd_leads(message: Message):
 @router.message(F.text)
 async def ai_consultant_handler(message: Message, bot: Bot, state: FSMContext):
     user_query = message.text.strip()
-    logger.info(f"💬 Xabar [{message.from_user.id} | @{message.from_user.username}]: '{user_query}'")
+    user = message.from_user
+    save_user(user.id, user.username or "", user.full_name or "")
+    logger.info(f"💬 Xabar [{user.id} | @{user.username}]: '{user_query}'")
 
     # 1. Foydalanuvchi to'g'ridan-to'g'ri telefon raqam yozgan bo'lsa, avtomatik qabul qilish
     phone_match = re.search(r'(\+?998[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b9\d{8}\b|\b\d{9}\b)', user_query)
@@ -368,27 +331,16 @@ async def ai_consultant_handler(message: Message, bot: Bot, state: FSMContext):
             phone = "+998" + phone
 
         user_name = message.from_user.full_name or "Mijoz"
-        await state.update_data(name=user_name, phone=phone)
-        await state.set_state(BookingState.waiting_for_time)
-        await message.answer(
-            f"Rahmat, {user_name}! Telefon raqamingiz qabul qilindi: `{phone}`\n\n"
-            "⏰ *Endi sizga qaysi kun yoki soatda kelish / bog'lanish qulay (bo'sh vaqtingiz)?*\n\n"
-            "_(Masalan: Ertaga soat 14:00 da, Dushanba kuni ertalab yoki xohlagan qulay vaqtingizni yozing)_",
-            reply_markup=cancel_keyboard,
-            parse_mode="Markdown"
-        )
+        await finalize_booking(message, state, bot, phone, user_name)
         return
 
     # 2. Agar foydalanuvchi qabulga yozilish niyatini bildirsa
     lower_query = user_query.lower()
     booking_keywords = ["qabul", "yozil", "navbat", "ko'rik", "yozdir"]
     if any(k in lower_query for k in booking_keywords) and len(user_query.split()) <= 4:
-        await state.set_state(BookingState.waiting_for_name)
-        await message.answer(
-            "Assalomu alaykum! Shifokor qabuliga yozilish uchun iltimos, ism va familiyangizni kiriting:",
-            reply_markup=cancel_keyboard
-        )
+        await start_booking(message, state)
         return
+
 
     # 3. Savolga AI orqali lo'nda javob berish
     try:

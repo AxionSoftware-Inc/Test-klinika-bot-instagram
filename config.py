@@ -38,6 +38,49 @@ def save_owner_id(owner_id: int, username: str = ""):
     with open(OWNER_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+
+def save_user(user_id: int, username: str = "", full_name: str = ""):
+    users = {}
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                users = json.load(f)
+        except Exception:
+            users = {}
+    users[str(user_id)] = {
+        "id": user_id,
+        "username": (username or "").lstrip("@"),
+        "full_name": full_name
+    }
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def find_user_by_username(username: str):
+    clean = username.strip().lstrip("@").lower()
+    if not clean or not os.path.exists(USERS_FILE):
+        return None
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            users = json.load(f)
+            for u in users.values():
+                if u.get("username", "").lower() == clean:
+                    return u
+    except Exception:
+        pass
+    return None
+
+def set_owner_by_username(username: str) -> bool:
+    user = find_user_by_username(username)
+    if user:
+        save_owner_id(user["id"], user.get("username", ""))
+        return True
+    return False
+
+
 BOT_USERNAME = os.getenv("BOT_USERNAME", "sharqonaklinika_bot")
 BOT_LINK = f"https://t.me/{BOT_USERNAME}"
 BOT_INSTA_LINK = f"https://t.me/{BOT_USERNAME}?start=insta"
