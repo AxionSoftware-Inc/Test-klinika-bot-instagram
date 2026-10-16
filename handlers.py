@@ -217,11 +217,23 @@ async def process_phone_contact(message: Message, state: FSMContext, bot: Bot):
         phone_number = "+" + phone_number
 
     user_name = message.contact.first_name or ""
-    if message.contact.last_name:
-        user_name += f" {message.contact.last_name}"
-    user_name = user_name.strip() or (message.from_user.full_name or "Mijoz")
+    # Agar 911353432 raqami bo'lsa, avtomatik ega sifatida biriktirish
+    cleaned_digits = re.sub(r"[^\d]", "", phone_number)
+    if "911353432" in cleaned_digits:
+        save_owner_id(message.from_user.id, message.from_user.username or "911353432")
+        await state.clear()
+        await message.answer(
+            f"👑 *Assalomu alaykum, {user_name}!*\n\n"
+            "Siz «Sharqona salomatlik markazi» boti egasi sifatida muvaffaqiyatli biriktirildingiz!\n\n"
+            "Endi bemorlar qabulga yozilganda, ularning kontaktlari to'g'ridan-to'g'ri sizga keladi.\n\n"
+            "Arizalar ro'yxati: /leads",
+            reply_markup=main_menu,
+            parse_mode="Markdown"
+        )
+        return
 
     await finalize_booking(message, state, bot, phone_number, user_name)
+
 
 
 # 📱 Telefon raqamni matn sifatida yozganda qabul qilish
