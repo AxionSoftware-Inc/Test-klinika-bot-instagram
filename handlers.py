@@ -4,7 +4,8 @@ import json
 import time
 import logging
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+
 from aiogram.filters import CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -26,11 +27,21 @@ from config import (
     save_owner_id,
     save_user,
     get_clinic_location,
-    save_clinic_location
+    save_clinic_location,
+    MAIN_OWNER_ID,
+    AUTHORIZED_PHONES,
+    AUTHORIZED_USERNAMES,
+    load_active_leads,
+    save_active_leads
 )
-
-from keyboards import main_menu, phone_keyboard, cancel_keyboard, quick_book_inline
+from keyboards import (
+    main_menu,
+    phone_keyboard,
+    cancel_keyboard,
+    quick_book_inline
+)
 from ai_assistant import ask_gemini
+
 
 router = Router()
 
@@ -51,8 +62,8 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         f"🟢 /start: ID={user.id}, Ism={user.full_name}, Username=@{user.username}, Manba={command.args or 'telegram'}"
     )
 
-    # Agar @Ummihamd bo'lsa, avtomatik ravishda egasi (owner) qilib biriktirish
-    if user.username and user.username.lower() == "ummihamd":
+    # Agar ruxsat etilgan ega username bo'lsa (@Ummihamd va h.k.)
+    if user.username and user.username.lower() in [u.lower() for u in AUTHORIZED_USERNAMES]:
         save_owner_id(user.id, user.username)
         owner_text = (
             f"👑 *Assalomu alaykum, {user.full_name}!*\n\n"
@@ -62,6 +73,7 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         )
         await message.answer(owner_text, reply_markup=main_menu, parse_mode="Markdown")
         return
+
 
 
     
@@ -217,10 +229,10 @@ async def process_phone_contact(message: Message, state: FSMContext, bot: Bot):
         phone_number = "+" + phone_number
 
     user_name = message.contact.first_name or ""
-    # Agar 911353432 raqami bo'lsa, avtomatik ega sifatida biriktirish
+    # Agar ruxsat etilgan egalar telefon raqami bo'lsa (911353432, 975880140 va h.k.)
     cleaned_digits = re.sub(r"[^\d]", "", phone_number)
-    if "911353432" in cleaned_digits:
-        save_owner_id(message.from_user.id, message.from_user.username or "911353432")
+    if any(auth_p in cleaned_digits for auth_p in AUTHORIZED_PHONES):
+        save_owner_id(message.from_user.id, message.from_user.username or phone_number)
         await state.clear()
         await message.answer(
             f"👑 *Assalomu alaykum, {user_name}!*\n\n"
@@ -231,6 +243,7 @@ async def process_phone_contact(message: Message, state: FSMContext, bot: Bot):
             parse_mode="Markdown"
         )
         return
+
 
     await finalize_booking(message, state, bot, phone_number, user_name)
 
@@ -255,6 +268,21 @@ async def process_phone_text(message: Message, state: FSMContext, bot: Bot):
     elif not phone_number.startswith("+") and len(cleaned) == 12:
         phone_number = "+" + cleaned
 
+    cleaned_digits = re.sub(r"[^\d]", "", phone_number)
+    if any(auth_p in cleaned_digits for auth_p in AUTHORIZED_PHONES):
+        save_owner_id(message.from_user.id, message.from_user.username or phone_number)
+        await state.clear()
+        user_name = message.from_user.full_name or "Ega"
+        await message.answer(
+            f"👑 *Assalomu alaykum, {user_name}!*\n\n"
+            "Siz «Sharqona salomatlik markazi» boti egasi sifatida muvaffaqiyatli biriktirildingiz!\n\n"
+            "Endi bemorlar qabulga yozilganda, ularning kontaktlari to'g'ridan-to'g'ri sizga keladi.\n\n"
+            "Arizalar ro'yxati: /leads",
+            reply_markup=main_menu,
+            parse_mode="Markdown"
+        )
+        return
+
     user_name = message.from_user.full_name or "Mijoz"
     await finalize_booking(message, state, bot, phone_number, user_name)
 
@@ -264,8 +292,9 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_
     await state.clear()
     user = message.from_user
     username_text = f"@{user.username.replace('_', '\\\\_')}" if user.username else "Mavjud emas"
-    safe_name = user_name.replace("*", "").replace("_", "")
+    safe_name = re.sub(r"[*_`\[\]]", "", user_name)
     lead_time = time.strftime("%Y-%m-%d %H:%M:%S")
+    lead_id = f"lead_{int(time.time())}_{user.id}"
 
     # Mijozga tasdiq xabari
     confirmation_text = (
@@ -277,8 +306,9 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_
     )
     await message.answer(confirmation_text, reply_markup=main_menu, parse_mode="Markdown")
 
-    # Ariza ma'lumotlarini leads.json ga saqlash
+    # Ariza ma'lumotlarini leads.json ga saqlash (arxiv)
     lead_entry = {
+        "lead_id": lead_id,
         "time": lead_time,
         "name": user_name,
         "phone": phone_number,
@@ -311,16 +341,46 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_
         "📌 *Holat:* Bemor aloqaga chiqishingizni kutmoqda."
     )
 
+    # Qabul qilish tugmasi
+    claim_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Qabul qildim", callback_data=f"claim_{lead_id}")
+        ]]
+    )
 
-    # Bot egasiga yuborish
+    # Faol arizalarni saqlash tizimi
+    active_leads = load_active_leads()
+    active_leads[lead_id] = {
+        "lead_id": lead_id,
+        "time": lead_time,
+        "name": user_name,
+        "phone": phone_number,
+        "user_id": user.id,
+        "username": user.username,
+        "full_name": user.full_name,
+        "sent_messages": {},
+        "claimed_by": None,
+        "claimed_by_name": None,
+        "claimed_at": None,
+    }
+
+    # Barcha egalarga yuborish
     for oid in get_owner_ids():
         try:
-            await bot.send_message(chat_id=oid, text=owner_notification, parse_mode="Markdown")
+            sent_msg = await bot.send_message(
+                chat_id=oid,
+                text=owner_notification,
+                reply_markup=claim_keyboard,
+                parse_mode="Markdown"
+            )
+            active_leads[lead_id]["sent_messages"][str(oid)] = sent_msg.message_id
             logger.info(f"✅ Ariza egasiga ({oid}) yuborildi.")
         except Exception as e:
             logger.warning(f"Egasiga ({oid}) xabar yuborishda xatolik: {e}")
 
-    # Admin guruhiga yuborish
+    save_active_leads(active_leads)
+
+    # Admin guruhiga yuborish (agar mavjud bo'lsa)
     if ADMIN_GROUP_ID:
         try:
             group_id = int(ADMIN_GROUP_ID.strip())
@@ -328,6 +388,117 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_
             logger.info(f"✅ Ariza admin guruhiga ({group_id}) yuborildi.")
         except Exception as e:
             logger.warning(f"Admin guruhiga ({ADMIN_GROUP_ID}) xabar yuborishda xatolik: {e}")
+
+
+# ✅ «Qabul qildim» inline tugmasi bosilganda
+@router.callback_query(F.data.startswith("claim_"))
+async def handle_claim_lead(callback: CallbackQuery, bot: Bot):
+    lead_id = callback.data.replace("claim_", "")
+    active_leads = load_active_leads()
+    lead = active_leads.get(lead_id)
+
+    if not lead:
+        await callback.answer("⚠️ Ushbu ariza ma'lumoti topilmadi yoki eskirgan.", show_alert=True)
+        return
+
+    claimer = callback.from_user
+    claimer_id = claimer.id
+    claimer_name = claimer.full_name or claimer.username or "Ega/Xodim"
+    safe_claimer_name = re.sub(r"[*_`\[\]]", "", claimer_name)
+
+    # Agar ariza allaqachon biror kim tomonidan qabul qilingan bo'lsa
+    if lead.get("claimed_by"):
+        already_name = lead.get("claimed_by_name", "boshqa ma'sul")
+        await callback.answer(f"⚠️ Bu arizani allaqachon {already_name} qabul qilgan!", show_alert=True)
+        return
+
+    # Arizani band qilish
+    claim_time = time.strftime("%Y-%m-%d %H:%M:%S")
+    lead["claimed_by"] = claimer_id
+    lead["claimed_by_name"] = safe_claimer_name
+    lead["claimed_at"] = claim_time
+    save_active_leads(active_leads)
+
+    await callback.answer("✅ Ariza qabul qilindi! Bemor bilan bog'laning.")
+
+    raw_patient_name = lead.get("name", "Mijoz")
+    safe_patient_name = re.sub(r"[*_`\[\]]", "", raw_patient_name)
+    phone_number = lead.get("phone", "")
+    orig_username = lead.get("username")
+    patient_username = f"@{orig_username.replace('_', '\\\\_')}" if orig_username else "Mavjud emas"
+    lead_orig_time = lead.get("time", "")
+
+    sent_messages = lead.get("sent_messages", {})
+
+    for oid_str, msg_id in list(sent_messages.items()):
+        try:
+            oid = int(oid_str)
+            if oid == MAIN_OWNER_ID:
+                # 👑 ASOSIY EGA (Azimov Jamil): Xabar HECH QACHON O'CHMAYDI!
+                if claimer_id == MAIN_OWNER_ID:
+                    claim_info = (
+                        f"✅ *SIZ O'ZINGIZ QABUL QILDINGIZ (Asosiy ega)*\n"
+                        f"⏱ *Vaqt:* {claim_time}"
+                    )
+                else:
+                    claim_info = (
+                        f"✅ *XODIM QABUL QILDI (Bog'lanilmoqda)*\n"
+                        f"👤 *Qabul qiluvchi:* {safe_claimer_name} (`{claimer_id}`)\n"
+                        f"⏱ *Qabul qilingan vaqt:* {claim_time}"
+                    )
+
+                updated_text = (
+                    "🔔 *ARIZA QABUL QILINDI*\n"
+                    "────────────────────\n"
+                    f"👤 *F.I.O:* {safe_patient_name}\n"
+                    f"📞 *Telefon:* `{phone_number}`\n"
+                    f"💬 *Telegram:* {patient_username}\n"
+                    f"📅 *Kelgan vaqt:* {lead_orig_time}\n"
+                    "────────────────────\n"
+                    f"{claim_info}"
+                )
+                try:
+                    await bot.edit_message_text(
+                        chat_id=oid,
+                        message_id=msg_id,
+                        text=updated_text,
+                        parse_mode="Markdown",
+                        reply_markup=None
+                    )
+                except Exception as edit_err:
+                    logger.warning(f"Asosiy ega xabarini yangilashda xatolik ({oid}): {edit_err}")
+            elif oid == claimer_id:
+                # 👤 QABUL QILGAN ODDIY EGA: xabar qoladi va tasdiq ko'rinadi
+                claimer_text = (
+                    "🔔 *ARIZA QABUL QILINDI*\n"
+                    "────────────────────\n"
+                    f"👤 *F.I.O:* {safe_patient_name}\n"
+                    f"📞 *Telefon:* `{phone_number}`\n"
+                    f"💬 *Telegram:* {patient_username}\n"
+                    f"📅 *Kelgan vaqt:* {lead_orig_time}\n"
+                    "────────────────────\n"
+                    f"✅ *SIZ QABUL QILDINGIZ!*\n"
+                    f"📞 Bemor bilan bog'lanish sizning zimmangizda.\n"
+                    f"⏱ *Qabul qilingan vaqt:* {claim_time}"
+                )
+                try:
+                    await bot.edit_message_text(
+                        chat_id=oid,
+                        message_id=msg_id,
+                        text=claimer_text,
+                        parse_mode="Markdown",
+                        reply_markup=None
+                    )
+                except Exception as edit_err:
+                    logger.warning(f"Qabul qiluvchi xabarini yangilashda xatolik ({oid}): {edit_err}")
+            else:
+                # 🚫 BOSHQALAR (Boshqa oddiy egalar): Ikki kishi bir vaqtda telefon qilmasligi uchun xabar BUTUNLAY O'CHIRILADI!
+                try:
+                    await bot.delete_message(chat_id=oid, message_id=msg_id)
+                except Exception as del_err:
+                    logger.warning(f"Boshqa egadan xabarni o'chirishda xatolik ({oid}): {del_err}")
+        except Exception as e:
+            logger.warning(f"Egalar xabarini yangilashda xatolik ({oid_str}): {e}")
 
 
 

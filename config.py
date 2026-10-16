@@ -9,7 +9,32 @@ ADMIN_ID = os.getenv("ADMIN_ID", "")
 ADMIN_GROUP_ID = os.getenv("ADMIN_GROUP_ID", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDIXr_GOpeY5np87-BDxUiMWRhRlJATj0Q")
 
+# Asosiy ega (Azimov Jamil) - unda hech qachon arizalar o'chib ketmaydi
+MAIN_OWNER_ID = int(os.getenv("MAIN_OWNER_ID", "591248727"))
+
+# Ruxsat etilgan egalarning telefonlari va username'lari
+AUTHORIZED_PHONES = ["911353432", "975880140"]
+AUTHORIZED_USERNAMES = ["ummihamd"]
+
 OWNER_FILE = os.path.join(os.path.dirname(__file__), "owner.json")
+ACTIVE_LEADS_FILE = os.path.join(os.path.dirname(__file__), "active_leads.json")
+
+def load_active_leads():
+    if os.path.exists(ACTIVE_LEADS_FILE):
+        try:
+            with open(ACTIVE_LEADS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_active_leads(data):
+    try:
+        with open(ACTIVE_LEADS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 
 def get_owner_ids():
     ids = set()
