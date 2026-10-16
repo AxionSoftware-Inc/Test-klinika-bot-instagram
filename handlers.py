@@ -492,11 +492,30 @@ async def handle_claim_lead(callback: CallbackQuery, bot: Bot):
                 except Exception as edit_err:
                     logger.warning(f"Qabul qiluvchi xabarini yangilashda xatolik ({oid}): {edit_err}")
             else:
-                # 🚫 BOSHQALAR (Boshqa oddiy egalar): Ikki kishi bir vaqtda telefon qilmasligi uchun xabar BUTUNLAY O'CHIRILADI!
+                # 👥 Boshqa egalarda xabar o'chib ketmaydi, "QABUL QILINGAN" deb yangilanadi va tugma olib tashlanadi
+                other_text = (
+                    "🔔 *ARIZA QABUL QILINGAN*\n"
+                    "────────────────────\n"
+                    f"👤 *F.I.O:* {safe_patient_name}\n"
+                    f"📞 *Telefon:* `{phone_number}`\n"
+                    f"💬 *Telegram:* {patient_username}\n"
+                    f"📅 *Kelgan vaqt:* {lead_orig_time}\n"
+                    "────────────────────\n"
+                    f"📌 *Holat:* ⚠️ QABUL QILINGAN\n"
+                    f"👤 *Qabul qildi:* {safe_claimer_name}\n"
+                    f"⏱ *Vaqt:* {claim_time}\n\n"
+                    "ℹ️ _Ushbu bemor bilan allaqachon bog'lanilmoqda._"
+                )
                 try:
-                    await bot.delete_message(chat_id=oid, message_id=msg_id)
-                except Exception as del_err:
-                    logger.warning(f"Boshqa egadan xabarni o'chirishda xatolik ({oid}): {del_err}")
+                    await bot.edit_message_text(
+                        chat_id=oid,
+                        message_id=msg_id,
+                        text=other_text,
+                        parse_mode="Markdown",
+                        reply_markup=None
+                    )
+                except Exception as edit_err:
+                    logger.warning(f"Boshqa egaga qabul qilingan holatini yangilashda xatolik ({oid}): {edit_err}")
         except Exception as e:
             logger.warning(f"Egalar xabarini yangilashda xatolik ({oid_str}): {e}")
 
