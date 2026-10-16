@@ -97,6 +97,32 @@ CLINIC_ADDRESS = os.getenv("CLINIC_ADDRESS", "Shahrisabz shahri, Tez yordam klin
 CLINIC_LOCATION_LAT = float(os.getenv("CLINIC_LOCATION_LAT", "39.042527"))
 CLINIC_LOCATION_LON = float(os.getenv("CLINIC_LOCATION_LON", "66.828387"))
 
+LOCATION_FILE = os.path.join(os.path.dirname(__file__), "location.json")
+
+def get_clinic_location():
+    if os.path.exists(LOCATION_FILE):
+        try:
+            with open(LOCATION_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                lat = float(data.get("lat", CLINIC_LOCATION_LAT))
+                lon = float(data.get("lon", CLINIC_LOCATION_LON))
+                address = data.get("address", CLINIC_ADDRESS)
+                return lat, lon, address
+        except Exception:
+            pass
+    return CLINIC_LOCATION_LAT, CLINIC_LOCATION_LON, CLINIC_ADDRESS
+
+def save_clinic_location(lat: float, lon: float, address: str = ""):
+    data = {"lat": lat, "lon": lon}
+    if address:
+        data["address"] = address
+    else:
+        _, _, cur_address = get_clinic_location()
+        data["address"] = cur_address
+    with open(LOCATION_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 # Qand kasalligini davolashga ixtisoslashgan xizmatlar va narxlar
 SERVICES_AND_PRICES = [
     {"name": "🩺 Qand kasalligini davolash kursi (konsultatsiya ichida)", "price": "500 000 – 600 000 so'm"},

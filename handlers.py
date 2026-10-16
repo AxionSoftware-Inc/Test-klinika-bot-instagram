@@ -24,8 +24,11 @@ from config import (
     SERVICES_AND_PRICES,
     get_owner_ids,
     save_owner_id,
-    save_user
+    save_user,
+    get_clinic_location,
+    save_clinic_location
 )
+
 from keyboards import main_menu, phone_keyboard, cancel_keyboard, quick_book_inline
 from ai_assistant import ask_gemini
 
@@ -125,10 +128,11 @@ async def show_services(message: Message):
 @router.message(F.text == "📍 Manzil va Aloqa")
 async def show_location(message: Message):
     phones_formatted = "\n".join([f"• {p}" for p in CLINIC_PHONES_LIST])
+    lat, lon, address = get_clinic_location()
     text = (
         f"🏥 *«{CLINIC_NAME}»*\n"
         f"_({CLINIC_LEGAL_NAME})_\n\n"
-        f"📍 *Manzil:*\n{CLINIC_ADDRESS}\n\n"
+        f"📍 *Manzil:*\n{address}\n\n"
         f"📞 *Telefon raqamlar:*\n"
         f"{phones_formatted}\n\n"
         f"⏰ *Ish vaqti:* Dushanba - Shanba: 08:30 dan 18:00 gacha\n"
@@ -137,9 +141,33 @@ async def show_location(message: Message):
     await message.answer(text, parse_mode="Markdown")
     # Lokatsiya yuborish
     try:
-        await message.answer_location(latitude=CLINIC_LOCATION_LAT, longitude=CLINIC_LOCATION_LON)
+        await message.answer_location(latitude=lat, longitude=lon)
     except Exception:
         pass
+
+
+# 📍 Lokatsiya yuborilganda, uni yangi klinika manzili sifatida yangilash (Ega yoki admin yuborganida)
+@router.message(F.location)
+async def handle_set_location(message: Message):
+    owner_ids = get_owner_ids()
+    is_owner = (message.from_user.id in owner_ids) if owner_ids else True
+
+    if not is_owner:
+        await message.answer("ℹ️ Lokatsiyangiz uchun rahmat. Klinika manzilini ko'rish uchun «📍 Manzil va Aloqa» tugmasini bosing.")
+        return
+
+    lat = round(message.location.latitude, 6)
+    lon = round(message.location.longitude, 6)
+    save_clinic_location(lat, lon)
+
+    await message.answer(
+        f"📍 *Klinikaning yangi lokatsiyasi muvaffaqiyatli saqlandi!*\n\n"
+        f"🌐 Kenglik (Latitude): `{lat}`\n"
+        f"🌐 Uzunlik (Longitude): `{lon}`\n\n"
+        "Endi bemorlar «📍 Manzil va Aloqa» tugmasini bosganida aynan shu manzil va xarita lokatsiyasi yuboriladi.",
+        parse_mode="Markdown"
+    )
+
 
 
 # 📝 Qabulga yozilish jarayonini boshlash
@@ -210,13 +238,14 @@ async def process_phone_text(message: Message, state: FSMContext, bot: Bot):
 async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_number: str, user_name: str):
     await state.clear()
     user = message.from_user
-    username_text = f"@{user.username}" if user.username else "Mavjud emas"
+    username_text = f"@{user.username.replace('_', '\\\\_')}" if user.username else "Mavjud emas"
+    safe_name = user_name.replace("*", "").replace("_", "")
     lead_time = time.strftime("%Y-%m-%d %H:%M:%S")
 
     # Mijozga tasdiq xabari
     confirmation_text = (
         f"✅ *Arizangiz muvaffaqiyatli qabul qilindi!*\n\n"
-        f"👤 *F.I.O:* {user_name}\n"
+        f"👤 *F.I.O:* {safe_name}\n"
         f"📞 *Telefon:* `{phone_number}`\n\n"
         "Tez orada klinika ma'murlari siz bilan bog'lanishadi va sizga eng ma'qul qabul vaqtini belgilab berishadi.\n\n"
         "Salomat bo'ling! 😊"
@@ -249,13 +278,14 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_
     owner_notification = (
         "🔔 *YANGI ARIZA / QABULGA YOZILISH!*\n"
         "────────────────────\n"
-        f"👤 *F.I.O:* {user_name}\n"
+        f"👤 *F.I.O:* {safe_name}\n"
         f"📞 *Telefon:* `{phone_number}`\n"
         f"💬 *Telegram:* {username_text} (ID: `{user.id}`)\n"
         f"📅 *Vaqt:* {lead_time}\n"
         "────────────────────\n"
         "📌 *Holat:* Bemor aloqaga chiqishingizni kutmoqda."
     )
+
 
     # Bot egasiga yuborish
     for oid in get_owner_ids():
