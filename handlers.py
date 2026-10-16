@@ -51,6 +51,19 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         f"🟢 /start: ID={user.id}, Ism={user.full_name}, Username=@{user.username}, Manba={command.args or 'telegram'}"
     )
 
+    # Agar @Ummihamd bo'lsa, avtomatik ravishda egasi (owner) qilib biriktirish
+    if user.username and user.username.lower() == "ummihamd":
+        save_owner_id(user.id, user.username)
+        owner_text = (
+            f"👑 *Assalomu alaykum, {user.full_name}!*\n\n"
+            "Siz «Sharqona salomatlik markazi» boti egasi sifatida muvaffaqiyatli biriktirildingiz.\n\n"
+            "Endi barcha kelib tushgan yangi qabul arizalari va bemorlarning telefon raqamlari to'g'ridan-to'g'ri sizning shaxsiy chatingizga keladi.\n\n"
+            "Barcha arizalar ro'yxatini ko'rish uchun: /leads"
+        )
+        await message.answer(owner_text, reply_markup=main_menu, parse_mode="Markdown")
+        return
+
+
     
     source_text = ""
     if command.args == "insta":

@@ -34,9 +34,24 @@ def get_owner_ids():
     return list(ids)
 
 def save_owner_id(owner_id: int, username: str = ""):
-    data = {"owner_id": owner_id, "username": username}
+    current = []
+    if os.path.exists(OWNER_FILE):
+        try:
+            with open(OWNER_FILE, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                if isinstance(d, list):
+                    current = d
+                elif isinstance(d, dict) and "owner_id" in d:
+                    current = [d]
+        except Exception:
+            current = []
+
+    exists = any(item.get("owner_id") == owner_id for item in current)
+    if not exists:
+        current.append({"owner_id": owner_id, "username": username})
     with open(OWNER_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(current, f, ensure_ascii=False, indent=2)
+
 
 USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
 
