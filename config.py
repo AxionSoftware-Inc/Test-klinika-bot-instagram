@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -79,25 +80,93 @@ def save_owner_id(owner_id: int, username: str = ""):
 
 
 USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+LEADS_FILE = os.path.join(os.path.dirname(__file__), "leads.json")
 
-def save_user(user_id: int, username: str = "", full_name: str = ""):
-    users = {}
+def load_users():
     if os.path.exists(USERS_FILE):
         try:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
-                users = json.load(f)
+                return json.load(f)
         except Exception:
-            users = {}
-    users[str(user_id)] = {
-        "id": user_id,
-        "username": (username or "").lstrip("@"),
-        "full_name": full_name
-    }
+            pass
+    return {}
+
+def save_users_data(data):
     try:
         with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
+def is_user_booked(user_id: int) -> bool:
+    if os.path.exists(LEADS_FILE):
+        try:
+            with open(LEADS_FILE, "r", encoding="utf-8") as f:
+                leads = json.load(f)
+                for l in leads:
+                    if l.get("user_id") == user_id:
+                        return True
+        except Exception:
+            pass
+    return False
+
+def mark_user_booked(user_id: int, phone: str = ""):
+    users = load_users()
+    uid_str = str(user_id)
+    if uid_str in users:
+        users[uid_str]["has_booked"] = True
+        if phone:
+            users[uid_str]["phone"] = phone
+        save_users_data(users)
+
+def mark_visitor_notified(user_id: int):
+    users = load_users()
+    uid_str = str(user_id)
+    if uid_str in users:
+        users[uid_str]["notified_as_visitor"] = True
+        save_users_data(users)
+
+def save_user(user_id: int, username: str = "", full_name: str = "", source: str = ""):
+    users = load_users()
+    now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+    uid_str = str(user_id)
+    existing = users.get(uid_str, {})
+
+    first_seen = existing.get("first_seen") or now_str
+    existing_source = existing.get("source")
+    final_source = source if source else (existing_source or "telegram")
+
+    booked = existing.get("has_booked", False) or is_user_booked(user_id)
+
+    users[uid_str] = {
+        "id": user_id,
+        "username": (username or existing.get("username", "")).lstrip("@"),
+        "full_name": full_name or existing.get("full_name", ""),
+        "first_seen": first_seen,
+        "last_seen": now_str,
+        "source": final_source,
+        "phone": existing.get("phone", ""),
+        "has_booked": booked,
+        "notified_as_visitor": existing.get("notified_as_visitor", False)
+    }
+    save_users_data(users)
+    return users[uid_str]
+
+def get_unregistered_visitors():
+    users = load_users()
+    owner_ids = get_owner_ids()
+    visitors = []
+    for uid_str, u in users.items():
+        uid = int(uid_str) if uid_str.lstrip("-").isdigit() else u.get("id")
+        if uid in owner_ids:
+            continue
+        uname = (u.get("username") or "").lower()
+        if uname in [x.lower() for x in AUTHORIZED_USERNAMES]:
+            continue
+        if u.get("has_booked") or is_user_booked(uid):
+            continue
+        visitors.append(u)
+    return visitors
 
 def find_user_by_username(username: str):
     clean = username.strip().lstrip("@").lower()

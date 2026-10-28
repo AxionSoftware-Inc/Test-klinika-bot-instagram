@@ -26,6 +26,11 @@ from config import (
     get_owner_ids,
     save_owner_id,
     save_user,
+    load_users,
+    is_user_booked,
+    mark_user_booked,
+    mark_visitor_notified,
+    get_unregistered_visitors,
     get_clinic_location,
     save_clinic_location,
     MAIN_OWNER_ID,
@@ -51,28 +56,115 @@ class BookingState(StatesGroup):
 
 
 
+# 👀 Botga kirgan, lekin raqamini qoldirmagan tashrifchilarni egalarga chiroyli qilib uzatish
+async def notify_owners_about_visitor(bot: Bot, user, source: str = "telegram", extra_text: str = ""):
+    owner_ids = get_owner_ids()
+    if not owner_ids:
+        return
+    if user.id in owner_ids:
+        return
+    if user.username and user.username.lower() in [u.lower() for u in AUTHORIZED_USERNAMES]:
+        return
+
+    # Agar allaqachon ariza qoldirgan bo'lsa
+    if is_user_booked(user.id):
+        return
+
+    users = load_users()
+    u_data = users.get(str(user.id), {})
+    if u_data.get("notified_as_visitor"):
+        return
+
+    mark_visitor_notified(user.id)
+
+    safe_name = re.sub(r"[*_`\[\]]", "", user.full_name or "Mijoz")
+    username_text = f"@{user.username.replace('_', '\\\\_')}" if user.username else "Mavjud emas"
+    source_label = "📸 Instagram sahifasidan (`?start=insta`)" if source == "insta" else "✈️ Telegram qidiruv / havoladan"
+    now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Telegram profiliga to'g'ridan-to'g'ri havola
+    if user.username:
+        profile_link = f"https://t.me/{user.username}"
+    else:
+        profile_link = f"tg://user?id={user.id}"
+
+    card = (
+        "👀 *YANGI TASHRIF (Ro'yxatdan o'tmagan mijoz)*\n"
+        "────────────────────\n"
+        f"👤 *F.I.O / Ism:* [{safe_name}]({profile_link})\n"
+        f"💬 *Telegram:* {username_text}\n"
+        f"🆔 *ID raqami:* `{user.id}`\n"
+        f"🌐 *Manba:* {source_label}\n"
+        f"📅 *Kelgan vaqti:* {now_str}\n"
+        "────────────────────\n"
+        "📌 *Holat:* ⚠️ Botga kirib ko'rgan, lekin telefon raqamini jo'natmagan.\n\n"
+        f"👉 *Bog'lanish:* Bemorga Telegram orqali yozish uchun [bu yerga bosing]({profile_link}) yoki ism ustiga bosing."
+    )
+    if extra_text:
+        safe_extra = re.sub(r"[*_`\[\]]", "", extra_text)
+        card += f"\n\n💬 *Yozgan savoli:* _{safe_extra}_"
+
+    inline_kb = None
+    if user.username:
+        inline_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="💬 Telegramda yozish", url=f"https://t.me/{user.username}")
+        ]])
+
+    for oid in owner_ids:
+        try:
+            await bot.send_message(
+                chat_id=oid,
+                text=card,
+                reply_markup=inline_kb,
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+            logger.info(f"👀 Tashrif haqida egasiga ({oid}) xabar yuborildi: {user.id}")
+        except Exception as e:
+            logger.warning(f"Egasiga ({oid}) tashrif xabarini yuborishda xatolik: {e}")
+
+    if ADMIN_GROUP_ID:
+        try:
+            group_id = int(ADMIN_GROUP_ID.strip())
+            await bot.send_message(
+                chat_id=group_id,
+                text=card,
+                reply_markup=inline_kb,
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+        except Exception as e:
+            logger.warning(f"Admin guruhiga tashrif xabarini yuborishda xatolik: {e}")
+
+
 # /start buyrug'i (Instagramdan start=insta orqali kelganlarni ham aniqlaydi)
 @router.message(CommandStart())
-async def cmd_start(message: Message, command: CommandObject, state: FSMContext):
+async def cmd_start(message: Message, command: CommandObject, state: FSMContext, bot: Bot):
     await state.clear()
     
     user = message.from_user
-    save_user(user.id, user.username or "", user.full_name or "")
+    source = "insta" if command.args == "insta" else "telegram"
+    user_info = save_user(user.id, user.username or "", user.full_name or "", source=source)
     logger.info(
-        f"🟢 /start: ID={user.id}, Ism={user.full_name}, Username=@{user.username}, Manba={command.args or 'telegram'}"
+        f"🟢 /start: ID={user.id}, Ism={user.full_name}, Username=@{user.username}, Manba={source}"
     )
 
     # Agar ruxsat etilgan ega username bo'lsa (@Ummihamd va h.k.)
-    if user.username and user.username.lower() in [u.lower() for u in AUTHORIZED_USERNAMES]:
-        save_owner_id(user.id, user.username)
+    if user.id in get_owner_ids() or (user.username and user.username.lower() in [u.lower() for u in AUTHORIZED_USERNAMES]):
+        if user.username and user.username.lower() in [u.lower() for u in AUTHORIZED_USERNAMES]:
+            save_owner_id(user.id, user.username)
         owner_text = (
             f"👑 *Assalomu alaykum, {user.full_name}!*\n\n"
-            "Siz «Sharqona salomatlik markazi» boti egasi sifatida muvaffaqiyatli biriktirildingiz.\n\n"
-            "Endi barcha kelib tushgan yangi qabul arizalari va bemorlarning telefon raqamlari to'g'ridan-to'g'ri sizning shaxsiy chatingizga keladi.\n\n"
-            "Barcha arizalar ro'yxatini ko'rish uchun: /leads"
+            "Siz «Sharqona salomatlik markazi» boti egasi sifatida biriktirilgansiz.\n\n"
+            "Endi barcha kelib tushgan yangi qabul arizalari to'g'ridan-to'g'ri sizning shaxsiy chatingizga keladi.\n\n"
+            "📋 Arizalar ro'yxati: /leads\n"
+            "👀 Ro'yxatdan o'tmagan tashriflar: /visitors"
         )
         await message.answer(owner_text, reply_markup=main_menu, parse_mode="Markdown")
         return
+
+    # Agar oddiy tashrifchi bo'lsa va hali raqam qoldirmagan bo'lsa, adminlarga bildirishnoma yuborish
+    await notify_owners_about_visitor(bot, user, source=source)
 
 
 
@@ -325,6 +417,7 @@ async def finalize_booking(message: Message, state: FSMContext, bot: Bot, phone_
         leads.append(lead_entry)
         with open(leads_path, "w", encoding="utf-8") as f:
             json.dump(leads, f, ensure_ascii=False, indent=2)
+        mark_user_booked(user.id, phone_number)
         logger.info(f"💾 Yangi ariza saqlandi: {lead_entry}")
     except Exception as e:
         logger.error(f"Arizani saqlashda xatolik: {e}")
@@ -532,18 +625,26 @@ async def cmd_leads(message: Message):
         return
 
     leads_path = "leads.json"
-    if not os.path.exists(leads_path):
-        await message.answer("ℹ️ Hozircha hech qanday ariza kelib tushmagan.")
-        return
-    try:
-        with open(leads_path, "r", encoding="utf-8") as f:
-            leads = json.load(f)
-        if not leads:
-            await message.answer("ℹ️ Arizalar ro'yxati bo'sh.")
-            return
+    leads = []
+    if os.path.exists(leads_path):
+        try:
+            with open(leads_path, "r", encoding="utf-8") as f:
+                leads = json.load(f)
+        except Exception:
+            pass
 
-        text = f"📋 *Kelib tushgan arizalar ({len(leads)} ta):*\n\n"
-        for i, lead in enumerate(leads[-20:], 1):
+    visitors = get_unregistered_visitors()
+
+    text = f"📊 *KLINIKA STATISTIKASI:*\n"
+    text += f"📞 *Qabulga arizalar:* {len(leads)} ta\n"
+    text += f"👀 *Ro'yxatdan o'tmagan tashriflar:* {len(visitors)} ta (batafsil: /visitors)\n"
+    text += "────────────────────\n\n"
+
+    if not leads:
+        text += "ℹ️ Hozircha telefon raqam qoldirilgan ariza yo'q."
+    else:
+        text += "*Oxirgi tushgan arizalar:*\n"
+        for i, lead in enumerate(leads[-15:], 1):
             text += (
                 f"{i}. 👤 *{lead.get('name')}*\n"
                 f"   📞 Telefon: `{lead.get('phone')}`\n"
@@ -551,10 +652,46 @@ async def cmd_leads(message: Message):
                 f"   💬 Telegram: @{lead.get('username') or 'yoq'} (ID: `{lead.get('user_id')}`)\n"
                 "────────────────────\n"
             )
-        await message.answer(text, parse_mode="Markdown")
 
-    except Exception as e:
-        await message.answer(f"Xatolik: {e}")
+    await message.answer(text, parse_mode="Markdown")
+
+
+# 👀 /visitors (yoki /tashriflar) buyrug'i - ro'yxatdan o'tmagan, shunchaki kirganlarni ko'rsatish
+@router.message(F.text.in_(["/visitors", "/tashriflar"]))
+async def cmd_visitors(message: Message):
+    owner_ids = get_owner_ids()
+    if owner_ids and message.from_user.id not in owner_ids:
+        await message.answer("⛔️ Kechirasiz, bu ro'yxatni faqat bot egasi ko'ra oladi.")
+        return
+
+    visitors = get_unregistered_visitors()
+    if not visitors:
+        await message.answer("ℹ️ Hozircha ro'yxatdan o'tmagan tashrif buyuruvchilar yo'q.")
+        return
+
+    text = f"👀 *Ro'yxatdan o'tmagan tashrif buyuruvchilar ({len(visitors)} ta):*\n"
+    text += "_(Botdan foydalangan, lekin raqamini jo'natmaganlar)_\n"
+    text += "────────────────────\n\n"
+
+    for i, v in enumerate(visitors, 1):
+        uid = v.get("id")
+        name = re.sub(r"[*_`\[\]]", "", v.get("full_name") or "Noma'lum")
+        uname = v.get("username")
+        uname_text = f"@{uname.replace('_', '\\\\_')}" if uname else "yo'q"
+        src = "📸 Instagram" if v.get("source") == "insta" else "✈️ Telegram"
+        first_time = v.get("first_seen") or v.get("last_seen") or "Noma'lum"
+
+        link = f"https://t.me/{uname}" if uname else f"tg://user?id={uid}"
+        text += (
+            f"{i}. 👤 [{name}]({link})\n"
+            f"   💬 Telegram: {uname_text} (ID: `{uid}`)\n"
+            f"   🌐 Manba: {src}\n"
+            f"   📅 Vaqt: {first_time}\n"
+            f"   👉 [Profilini ochish]({link})\n"
+            "────────────────────\n"
+        )
+
+    await message.answer(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 
 # 🤖 Foydalanuvchining barcha erkin savollariga Gemini AI orqali aqlli javob qaytarish
@@ -565,6 +702,10 @@ async def ai_consultant_handler(message: Message, bot: Bot, state: FSMContext):
     user = message.from_user
     save_user(user.id, user.username or "", user.full_name or "")
     logger.info(f"💬 Xabar [{user.id} | @{user.username}]: '{user_query}'")
+
+    # Agar ro'yxatdan o'tmagan bo'lsa va xodim/ega bo'lmasa, tashrif haqida bildirishnoma uzatish (savolini ham ilova qilib)
+    if user.id not in get_owner_ids():
+        await notify_owners_about_visitor(bot, user, extra_text=user_query)
 
     # 1. Foydalanuvchi to'g'ridan-to'g'ri telefon raqam yozgan bo'lsa, avtomatik qabul qilish
     phone_match = re.search(r'(\+?998[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b9\d{8}\b|\b\d{9}\b)', user_query)
